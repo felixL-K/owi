@@ -106,11 +106,15 @@ module CoreImpl = struct
           ~finally:(fun () -> callback_close ())
           (fun () ->
             let wls = wls_init () in
-            try work wls sched callback
+            try Ok (work wls sched callback)
             with e ->
+              let s =
+                Fmt.str "%s\n%s" (Printexc.to_string e)
+                  (Printexc.get_backtrace ())
+              in
               let bt = Printexc.get_raw_backtrace () in
               Wq.fail sched.work_queue;
-              Printexc.raise_with_backtrace e bt ) )
+              Error (Failure s, bt) ) )
   end
 
   module State = struct
@@ -262,7 +266,7 @@ module CoreImpl = struct
       -> callback:('a eval * thread -> unit)
       -> callback_init:(unit -> unit)
       -> callback_end:(unit -> unit)
-      -> unit Domain.t array
+      -> (unit, exn * Printexc.raw_backtrace) result Domain.t array
   end = struct
     include Eval
 

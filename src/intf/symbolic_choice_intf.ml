@@ -74,7 +74,7 @@ module type S = sig
     -> callback:('a eval * thread -> unit)
     -> callback_init:(unit -> unit)
     -> callback_end:(unit -> unit)
-    -> unit Domain.t array
+    -> (unit, exn * Printexc.raw_backtrace) result Domain.t array
 end
 
 module type Intf = sig

@@ -190,7 +190,16 @@ let handle_result ~workers ~no_stop_at_failure ~no_value
   in
   let results =
     Wq.read_as_seq res_queue ~finalizer:(fun () ->
-      Array.iter Domain.join join_handles )
+        Array.iter
+          (fun x ->
+             match Domain.join x with
+             | Ok () -> ()
+             | Error (e, bt) -> (
+                 match e with
+                 | Failure s -> Fmt.pr "%s\n" s
+                 | _ -> Printexc.raise_with_backtrace e bt ) )
+          join_handles )
+
   in
   let results = sort_results deterministic_result_order results in
   let* count =
