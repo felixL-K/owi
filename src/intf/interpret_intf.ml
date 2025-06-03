@@ -159,7 +159,8 @@ module type S = sig
   type module_to_run
 
   (** interpret a module *)
-  val modul : env Env_id.collection -> module_to_run -> unit choice
+  val modul :
+    ?workspace:Fpath.t -> env Env_id.collection -> module_to_run -> unit choice
 
   type value
 

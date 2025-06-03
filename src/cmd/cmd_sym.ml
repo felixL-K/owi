@@ -21,8 +21,8 @@ let link_symbolic_modules link_state =
   Link.extern_module' link_state ~name:"summaries" ~func_typ
     Symbolic_wasm_ffi.summaries_extern_module
 
-let run_file ~entry_point ~unsafe ~rac ~srac ~optimize ~invoke_with_symbols _pc
-  filename =
+let run_file ~entry_point ~unsafe ~rac ~srac ~optimize ~invoke_with_symbols
+  ?workspace _pc filename =
   let* m = Compile.File.until_binary_validate ~unsafe ~rac ~srac filename in
   let* m = Cmd_utils.set_entry_point entry_point invoke_with_symbols m in
   let link_state = link_symbolic_modules Link.empty_state in
@@ -31,7 +31,7 @@ let run_file ~entry_point ~unsafe ~rac ~srac ~optimize ~invoke_with_symbols _pc
     Compile.Binary.until_link ~unsafe ~optimize ~name:None link_state m
   in
   let m = Symbolic.convert_module_to_run m in
-  Interpret.Symbolic.modul link_state.envs m
+  Interpret.Symbolic.modul ?workspace link_state.envs m
 
 let print_bug ~model_format ~model_out_file ~id ~no_value ~no_stop_at_failure
   ~no_assert_failure_expression_printing ~with_breadcrumbs bug =
@@ -221,7 +221,8 @@ let cmd ~unsafe ~rac ~srac ~optimize ~workers ~no_stop_at_failure ~no_value
   let pc = Choice.return () in
   let* result : unit Symbolic.Choice.t =
     list_fold_left
-      (run_file ~entry_point ~unsafe ~rac ~srac ~optimize ~invoke_with_symbols)
+      (run_file ~entry_point ~unsafe ~rac ~srac ~optimize ~invoke_with_symbols
+         ~workspace )
       pc files
   in
   handle_result ~fail_mode ~workers ~solver ~deterministic_result_order

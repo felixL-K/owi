@@ -801,8 +801,39 @@ module Make (P : Interpret_intf.P) :
         end
     | _ -> Choice.trap `Indirect_call_type_mismatch
 
-  let exec_instr instr (state : State.exec_state) : State.instr_result Choice.t
-      =
+  let log_query_to_file ?workspace (assumptions : Smtml.Expr.t list) : unit =
+    match assumptions with
+    | [] -> assert false
+    | _ -> (
+      let assumption_strings =
+        List.map (fun a -> Fmt.str "%a" Smtml.Expr.pp a) assumptions
+      in
+      let json =
+        `Assoc
+          [ ("hash", `String (Fmt.str "%x" (Hashtbl.hash assumption_strings)))
+          ; ("query", `List (List.map (fun s -> `String s) assumption_strings))
+          ]
+      in
+      let json_line = String.concat "" [ Yojson.Basic.to_string json; "\n" ] in
+      match workspace with
+      | Some ws -> (
+        (* Crée le répertoire s'il n'existe pas *)
+        match Bos.OS.Dir.create ~path:true ws with
+        | Ok _ ->
+          let file_path = Fpath.(ws / "queries_log.jsonl") |> Fpath.to_string in
+          let _ =
+            Out_channel.with_open_gen [ Open_creat; Open_append; Open_text ]
+              0o644 file_path (fun outc ->
+              Out_channel.output_string outc json_line )
+          in
+          ()
+        | Error (`Msg msg) ->
+          Logs.err (fun m -> m "Failed to create workspace directory: %s" msg) )
+      | None ->
+        Logs.warn (fun m -> m "No workspace provided, skipping query log") )
+
+  let exec_instr ?workspace instr (state : State.exec_state) :
+    State.instr_result Choice.t =
     let stack = state.stack in
     let env = state.env in
     let locals = state.locals in
@@ -814,6 +845,11 @@ module Make (P : Interpret_intf.P) :
       match Logs.level () with
       | Some Logs.Debug ->
         let+ pc = Choice.get_pc () in
+        ( match workspace with
+        | Some w ->
+          if Smtml.Expr.Set.is_empty pc then assert false
+          else log_query_to_file ~workspace:w (Smtml.Expr.Set.to_list pc)
+        | None -> assert false );
         Logs.debug (fun m ->
           m "path condition: [ %a ]" Smtml.Expr.pp_list
             (Smtml.Expr.Set.to_list pc) )
@@ -1447,10 +1483,10 @@ module Make (P : Interpret_intf.P) :
         m "unimplemented instruction: %a" (Types.pp_instr ~short:false) i );
       assert false
 
-  let rec loop (state : State.exec_state) =
+  let rec loop ?workspace (state : State.exec_state) =
     match state.pc with
     | instr :: pc -> begin
-      let* state = exec_instr instr { state with pc } in
+      let* state = exec_instr ?workspace instr { state with pc } in
       match state with
       | State.Continue state -> loop state
       | State.Return res -> Choice.return res
@@ -1461,7 +1497,7 @@ module Make (P : Interpret_intf.P) :
       | State.Continue state -> loop state
       | State.Return res -> Choice.return res )
 
-  let exec_expr envs env locals stack expr bt =
+  let exec_expr ?workspace envs env locals stack expr bt =
     let state : State.exec_state =
       let func_rt = match bt with None -> [] | Some rt -> rt in
       { stack
@@ -1475,10 +1511,10 @@ module Make (P : Interpret_intf.P) :
       }
     in
 
-    let+ state = loop state in
+    let+ state = loop ?workspace state in
     state
 
-  let modul envs (modul : Module_to_run.t) : unit P.Choice.t =
+  let modul ?workspace envs (modul : Module_to_run.t) : unit P.Choice.t =
     Logs.info (fun m -> m "interpreting ...");
 
     try
@@ -1487,11 +1523,15 @@ module Make (P : Interpret_intf.P) :
           List.fold_left
             (fun u to_run ->
               let* () = u in
-              let+ _end_stack =
-                let env = Module_to_run.env modul in
-                exec_expr envs env (State.Locals.of_list []) Stack.empty to_run
-                  None
+              let env = Module_to_run.env modul in
+              let exec =
+                match workspace with
+                | Some ws ->
+                  exec_expr ~workspace:ws envs env (State.Locals.of_list [])
+                    Stack.empty to_run None
+                | None -> assert false
               in
+              let+ _end_stack = exec in
               () )
             (Choice.return ())
             (Module_to_run.to_run modul)

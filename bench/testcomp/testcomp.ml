@@ -4,8 +4,8 @@ module Unix = struct
 end
 
 let tool =
-  Tool.mk_owi ~concolic:false ~workers:56 ~optimisation_level:3
-    ~solver:Smtml.Solver_type.Z3_solver
+  Tool.mk_owi ~concolic:false ~workers:1 ~optimisation_level:3
+    ~solver:Smtml.Solver_type.Altergo_solver
 
 let _tool = Tool.mk_klee ()
 
