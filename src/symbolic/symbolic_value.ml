@@ -24,6 +24,10 @@ type float64 = Expr.t
 
 let pp_float64 = Expr.pp
 
+type v128 = Expr.t
+
+let pp_v128 = Expr.pp
+
 type externref = V.externref
 
 type ref_value =
@@ -39,6 +43,7 @@ type t =
   | I64 of int64
   | F32 of float32
   | F64 of float64
+  | V128 of v128
   | Ref of ref_value
 
 let const_i32 (i : Int32.t) : int32 = value (Bitv (Smtml.Bitvector.of_int32 i))
@@ -48,6 +53,10 @@ let const_i64 (i : Int64.t) : int64 = value (Bitv (Smtml.Bitvector.of_int64 i))
 let const_f32 (f : Float32.t) : float32 = value (Num (F32 (Float32.to_bits f)))
 
 let const_f64 (f : Float64.t) : float64 = value (Num (F64 (Float64.to_bits f)))
+
+let const_v128 (v : V128.t) : v128 =
+  let a, b = V128.to_i64x2 v in
+  Smtml.Expr.concat (const_i64 a) (const_i64 b)
 
 let ref_null _ty = Ref (Funcref None)
 
@@ -64,6 +73,7 @@ let pp fmt = function
   | I64 i -> pp_int64 fmt i
   | F32 f -> pp_float32 fmt f
   | F64 f -> pp_float64 fmt f
+  | V128 e -> pp_v128 fmt e
   | Ref r -> pp_ref_value fmt r
 
 module Ref = struct
@@ -467,4 +477,25 @@ module F64 = struct
   let of_bits x = cvtop ty Reinterpret_int x
 
   let to_bits x = cvtop (Ty_bitv 64) Reinterpret_float x
+end
+
+module V128 = struct
+  let zero : v128 = const_v128 V128.zero
+
+  let of_i32x4 a b c d =
+    Smtml.Expr.concat (Smtml.Expr.concat a b) (Smtml.Expr.concat c d)
+
+  let to_i32x4 v =
+    let a = Smtml.Expr.extract v ~low:12 ~high:16 in
+    let b = Smtml.Expr.extract v ~low:8 ~high:12 in
+    let c = Smtml.Expr.extract v ~low:4 ~high:8 in
+    let d = Smtml.Expr.extract v ~low:0 ~high:4 in
+    (a, b, c, d)
+
+  let of_i64x2 a b = Smtml.Expr.concat a b
+
+  let to_i64x2 v =
+    let a = Smtml.Expr.extract v ~low:8 ~high:16 in
+    let b = Smtml.Expr.extract v ~low:0 ~high:8 in
+    (a, b)
 end

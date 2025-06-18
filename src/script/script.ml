@@ -80,6 +80,7 @@ let compare_result_const result (const : V.t) =
     Float32.eq n n' || String.equal (Float32.to_string n) (Float32.to_string n')
   | Result_const (Literal (Const_F64 n)), F64 n' ->
     Float64.eq n n' || String.equal (Float64.to_string n) (Float64.to_string n')
+  | Result_const (Literal (Const_V128 n)), V128 n' -> V128.eq n n'
   | Result_const (Literal (Const_null Func_ht)), Ref (Funcref None) -> true
   | Result_const (Literal (Const_null Extern_ht)), Ref (Externref None) -> true
   | Result_const (Literal (Const_extern n)), Ref (Externref (Some ref)) -> begin
@@ -115,6 +116,7 @@ let value_of_const : text const -> V.t Result.t = function
   | Const_I64 v -> ok @@ V.I64 v
   | Const_F32 v -> ok @@ V.F32 v
   | Const_F64 v -> ok @@ V.F64 v
+  | Const_V128 v -> ok @@ V.V128 v
   | Const_null rt ->
     let+ rt = Binary_types.convert_heap_type rt in
     V.ref_null rt
@@ -160,8 +162,8 @@ let run ~no_exhaustion ~optimize script =
         Logs.info (fun m -> m "*** module");
         incr curr_module;
         let+ link_state =
-          Compile.Text.until_interpret link_state ~unsafe ~rac:false ~srac:false
-            ~optimize ~name:None m
+          Compile.Text.until_interpret ~timeout:None ~timeout_instr:None
+            link_state ~unsafe ~rac:false ~srac:false ~optimize ~name:None m
         in
         (* TODO: enable printing again! *)
         link_state
@@ -171,7 +173,7 @@ let run ~no_exhaustion ~optimize script =
         let* m = Parse.Text.Inline_module.from_string m in
         let+ link_state =
           Compile.Text.until_interpret link_state ~unsafe ~rac:false ~srac:false
-            ~optimize ~name:None m
+            ~timeout:None ~timeout_instr:None ~optimize ~name:None m
         in
         link_state
       | Text.Binary_module (id, m) ->
@@ -180,8 +182,8 @@ let run ~no_exhaustion ~optimize script =
         let* m = Parse.Binary.Module.from_string m in
         let m = { m with id } in
         let+ link_state =
-          Compile.Binary.until_interpret link_state ~unsafe ~optimize ~name:None
-            m
+          Compile.Binary.until_interpret link_state ~timeout:None
+            ~timeout_instr:None ~unsafe ~optimize ~name:None m
         in
         link_state
       | Assert (Assert_trap_module (m, expected)) ->
@@ -191,7 +193,10 @@ let run ~no_exhaustion ~optimize script =
           Compile.Text.until_link link_state ~unsafe ~rac:false ~srac:false
             ~optimize ~name:None m
         in
-        let got = Interpret.Concrete.modul link_state.envs m in
+        let got =
+          Interpret.Concrete.modul ~timeout:None ~timeout_instr:None
+            link_state.envs m
+        in
         let+ () = check_error_result expected got in
         link_state
       | Assert (Assert_malformed_binary (m, expected)) ->

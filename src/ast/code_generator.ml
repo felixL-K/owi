@@ -106,6 +106,7 @@ let unop_generate (u : unop) (expr1 : binary expr) (ty1 : binary val_type) :
         (F64_const (Float64.of_float 0.) :: expr1) @ [ F_binop (S64, Sub) ]
       in
       Ok (expr, Num_type F64)
+    | Num_type V128 -> Error (`Spec_type_error Fmt.(str "%a" pp_unop u))
     | Ref_type _ -> Error (`Spec_type_error Fmt.(str "%a" pp_unop u)) )
 
 let binop_generate (b : binop) (expr1 : binary expr) (ty1 : binary val_type)
@@ -651,7 +652,7 @@ let add_owi_funcs (owi_funcs : (string * binary func_type) array) (m : Module.t)
       Array.map
         (fun (name, (ft, index)) ->
           ( name
-          , { Imported.modul = "symbolic"
+          , { Imported.modul = "owi"
             ; name
             ; assigned_name = Some name
             ; desc = Bt_raw (Some (Raw index), ft)
