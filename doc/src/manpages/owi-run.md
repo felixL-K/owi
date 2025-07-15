@@ -6,18 +6,15 @@ NAME
        owi-run - Run the concrete interpreter
 
 SYNOPSIS
-       owi run [OPTION]… FILE…
+       owi run [OPTION]… FILE
 
 ARGUMENTS
        FILE (required)
-           source files
+           source file
 
 OPTIONS
        --color=WHEN (absent=auto)
            Colorize the output. WHEN must be one of auto, always or never.
-
-       --optimize
-           optimize mode
 
        -q, --quiet
            Be quiet. Takes over -v and --verbosity.

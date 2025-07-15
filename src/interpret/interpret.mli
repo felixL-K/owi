@@ -6,12 +6,13 @@ module Concrete : sig
   val modul :
        timeout:float option
     -> timeout_instr:int option
+         (* TODO: replace this by a Concrete_extern_func.extern_func Link.state ? *)
     -> Concrete.Env.t Env_id.collection
     -> Concrete.Module_to_run.t
     -> unit Concrete_choice.t
 
   val exec_vfunc_from_outside :
-       locals:V.t list
+       locals:Concrete_value.t list
     -> env:Link_env.t'
     -> envs:Concrete.Env.t Env_id.collection
     -> Func_intf.t

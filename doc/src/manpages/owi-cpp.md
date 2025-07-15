@@ -24,8 +24,11 @@ OPTIONS
            Guarantee a fixed deterministic order of found failures. This
            implies --no-stop-at-failure.
 
-       --entry-point=FUNCTION
+       --entry-point=FUNCTION (absent=main)
            entry point of the executable
+
+       --exploration=VAL (absent=lifo)
+           exploration strategy to use ("fifo", "lifo" or "random")
 
        --fail-on-assertion-only
            ignore traps and only report assertion violations
@@ -66,14 +69,17 @@ OPTIONS
        -O VAL (absent=3)
            specify which optimization level to use
 
-       --optimize
-           optimize mode
-
        -q, --quiet
            Be quiet. Takes over -v and --verbosity.
 
+       --rac
+           runtime assertion checking mode
+
        -s VAL, --solver=VAL (absent=Z3)
            SMT solver to use
+
+       --srac
+           symbolic runtime assertion checking mode
 
        -u, --unsafe
            skip typechecking pass

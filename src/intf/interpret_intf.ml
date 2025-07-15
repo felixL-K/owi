@@ -71,10 +71,14 @@ module type P = sig
 
     val grow : t -> Value.int32 -> unit
 
-    val fill : t -> pos:Value.int32 -> len:Value.int32 -> char -> Value.bool
+    val fill : t -> pos:Value.int32 -> len:Value.int32 -> char -> unit Choice.t
 
     val blit :
-      t -> src:Value.int32 -> dst:Value.int32 -> len:Value.int32 -> Value.bool
+         t
+      -> src:Value.int32
+      -> dst:Value.int32
+      -> len:Value.int32
+      -> unit Choice.t
 
     val blit_string :
          t
@@ -82,7 +86,7 @@ module type P = sig
       -> src:Value.int32
       -> dst:Value.int32
       -> len:Value.int32
-      -> Value.bool
+      -> unit
 
     val size : t -> Value.int32
 
@@ -105,6 +109,8 @@ module type P = sig
     type t
 
     val value : t -> string
+
+    val size : t -> int
   end
 
   module Elem : sig
@@ -143,7 +149,7 @@ module type P = sig
 
     val env : t -> Env.t
 
-    val to_run : t -> binary expr list
+    val to_run : t -> binary expr Annotated.t list
 
     val id : t -> string option
   end

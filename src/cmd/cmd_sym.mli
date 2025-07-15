@@ -7,12 +7,34 @@ type fail_mode =
   | Assertion_only
   | Both
 
-val link_symbolic_modules :
-     Symbolic.Extern_func.extern_func Link.state
-  -> Symbolic.Extern_func.extern_func Link.state
+type exploration_strategy =
+  | FIFO
+  | LIFO
+  | Random
+
+type parameters =
+  { unsafe : bool
+  ; rac : bool
+  ; srac : bool
+  ; workers : int
+  ; no_stop_at_failure : bool
+  ; no_value : bool
+  ; no_assert_failure_expression_printing : bool
+  ; deterministic_result_order : bool
+  ; fail_mode : fail_mode
+  ; exploration_strategy : exploration_strategy
+  ; workspace : Fpath.t option
+  ; solver : Smtml.Solver_type.t
+  ; model_format : Cmd_utils.model_format
+  ; entry_point : string option
+  ; invoke_with_symbols : bool
+  ; model_out_file : Fpath.t option
+  ; with_breadcrumbs : bool
+  }
 
 val handle_result :
-     workers:int
+     exploration_strategy:exploration_strategy
+  -> workers:int
   -> no_stop_at_failure:bool
   -> no_value:bool
   -> no_assert_failure_expression_printing:bool
@@ -26,23 +48,4 @@ val handle_result :
   -> unit Symbolic.Choice.t
   -> unit Result.t
 
-val cmd :
-     unsafe:bool
-  -> rac:bool
-  -> srac:bool
-  -> optimize:bool
-  -> workers:int
-  -> no_stop_at_failure:bool
-  -> no_value:bool
-  -> no_assert_failure_expression_printing:bool
-  -> deterministic_result_order:bool
-  -> fail_mode:fail_mode
-  -> workspace:Fpath.t option
-  -> solver:Smtml.Solver_type.t
-  -> files:Fpath.t list
-  -> model_format:Cmd_utils.model_format
-  -> entry_point:string option
-  -> invoke_with_symbols:bool
-  -> model_out_file:Fpath.t option
-  -> with_breadcrumbs:bool
-  -> unit Result.t
+val cmd : parameters:parameters -> source_file:Fpath.t -> unit Result.t

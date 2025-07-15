@@ -68,12 +68,18 @@ struct
     let store_32 m ~addr v = Choice.lift_mem @@ store_32 m ~addr v
 
     let store_64 m ~addr v = Choice.lift_mem @@ store_64 m ~addr v
+
+    let fill m ~pos ~len c = Choice.lift_mem @@ fill m ~pos ~len c
+
+    let blit m ~src ~dst ~len = Choice.lift_mem @@ blit m ~src ~dst ~len
   end
 
   module Data = struct
     type t = Link_env.data
 
     let value data = data.Link_env.value
+
+    let size data = String.length data.Link_env.value
   end
 
   module Env = struct
@@ -134,7 +140,7 @@ struct
     type t =
       { id : string option
       ; env : Env.t
-      ; to_run : Types.binary Types.expr list
+      ; to_run : Types.binary Types.expr Annotated.t list
       }
 
     let env (t : t) = t.env

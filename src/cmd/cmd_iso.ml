@@ -81,7 +81,11 @@ let check_iso ~unsafe export_name export_type module1 module2 =
         match List.length pt with 1 -> false | _n -> true ) )
   in
 
-  let link_state = Cmd_sym.link_symbolic_modules Link.empty_state in
+  let link_state =
+    let func_typ = Symbolic.Extern_func.extern_type in
+    Link.extern_module' Link.empty_state ~name:"owi" ~func_typ
+      Symbolic_wasm_ffi.symbolic_extern_module
+  in
   let link_state =
     Link.extern_module' link_state ~name:"fuzzing-support"
       ~func_typ:Symbolic.Extern_func.extern_type
@@ -93,12 +97,12 @@ let check_iso ~unsafe export_name export_type module1 module2 =
       (emscripten_fuzzing_support_module ())
   in
   let* _module, link_state =
-    Compile.Binary.until_link ~name:(Some module_name1) ~unsafe ~optimize:false
-      link_state module1
+    Compile.Binary.until_link ~name:(Some module_name1) ~unsafe link_state
+      module1
   in
   let* _module, link_state =
-    Compile.Binary.until_link ~name:(Some module_name2) ~unsafe ~optimize:false
-      link_state module2
+    Compile.Binary.until_link ~name:(Some module_name2) ~unsafe link_state
+      module2
   in
 
   let typ = Types.Bt_raw (None, export_type) in
@@ -172,26 +176,30 @@ let check_iso ~unsafe export_name export_type module1 module2 =
               ( None
               , Some (Bt_raw (None, ([], [ Num_type I32 ])))
               , [ (* Not nan case, we can directly compare the two numbers *)
-                  Local_get (Raw (local_offset + 0))
+                  Types.Local_get (Raw (local_offset + 0))
                 ; Local_get (Raw (local_offset + 1))
                 ; F_relop (S32, Eq)
                 ]
+                |> Annotated.dummy_deep
               , [ (* Nan case, we must check if the second one is nan *)
-                  Local_get (Raw (local_offset + 1))
+                  Types.Local_get (Raw (local_offset + 1))
                 ; Local_get (Raw (local_offset + 1))
                 ; F_relop (S32, Eq)
                 ; If_else
                     ( None
                     , Some (Bt_raw (None, ([], [ Num_type I32 ])))
                     , [ (* Not nan case, we can compare the two numbers *)
-                        Local_get (Raw (local_offset + 0))
+                        Types.Local_get (Raw (local_offset + 0))
                       ; Local_get (Raw (local_offset + 1))
                       ; F_relop (S32, Eq)
                       ]
+                      |> Annotated.dummy_deep
                     , [ (* Nan case, they are both nan, we return true *)
-                        I32_const 1l
-                      ] )
-                ] )
+                        Types.I32_const 1l
+                      ]
+                      |> Annotated.dummy_deep )
+                ]
+                |> Annotated.dummy_deep )
           ]
         | [ Types.Num_type F64 ] ->
           (* Here we can not simply compare the two numbers, because they may both be nan and then the comparison on float will return false. *)
@@ -206,26 +214,30 @@ let check_iso ~unsafe export_name export_type module1 module2 =
               ( None
               , Some (Bt_raw (None, ([], [ Num_type I32 ])))
               , [ (* Not nan case, we can directly compare the two numbers *)
-                  Local_get (Raw (local_offset + 2))
+                  Types.Local_get (Raw (local_offset + 2))
                 ; Local_get (Raw (local_offset + 3))
                 ; F_relop (S64, Eq)
                 ]
+                |> Annotated.dummy_deep
               , [ (* Nan case, we must check if the second one is nan *)
-                  Local_get (Raw (local_offset + 3))
+                  Types.Local_get (Raw (local_offset + 3))
                 ; Local_get (Raw (local_offset + 3))
                 ; F_relop (S64, Eq)
                 ; If_else
                     ( None
                     , Some (Bt_raw (None, ([], [ Num_type I32 ])))
                     , [ (* Not nan case, we can compare the two numbers *)
-                        Local_get (Raw (local_offset + 2))
+                        Types.Local_get (Raw (local_offset + 2))
                       ; Local_get (Raw (local_offset + 3))
                       ; F_relop (S64, Eq)
                       ]
+                      |> Annotated.dummy_deep
                     , [ (* Nan case, they are both nan, we return true *)
-                        I32_const 1l
-                      ] )
-                ] )
+                        Types.I32_const 1l
+                      ]
+                      |> Annotated.dummy_deep )
+                ]
+                |> Annotated.dummy_deep )
           ]
         | rt ->
           Fmt.failwith
@@ -234,6 +246,7 @@ let check_iso ~unsafe export_name export_type module1 module2 =
             Types.pp_result_type rt )
       @ [ Call (Raw id_owi_assert) ]
     in
+    let body = Annotated.dummies body |> Annotated.dummy in
     let type_f =
       let (Bt_raw (_, typ)) = typ in
       Types.Bt_raw (None, (fst typ, []))
@@ -291,14 +304,19 @@ let check_iso ~unsafe export_name export_type module1 module2 =
     let id = Some "start" in
     let locals = [] in
     let body =
-      List.map
-        (function
-          | (None | Some _), Types.Num_type I32 -> Types.Call (Raw id_i32_symbol)
-          | (None | Some _), Types.Num_type I64 -> Types.Call (Raw id_i64_symbol)
-          | (None | Some _), Types.Num_type F32 -> Types.Call (Raw id_f32_symbol)
-          | (None | Some _), Types.Num_type F64 -> Types.Call (Raw id_f64_symbol)
-          | _ -> Fmt.failwith "TODO" )
-        (fst export_type)
+      Annotated.dummy_deep
+      @@ List.map
+           (function
+             | (None | Some _), Types.Num_type I32 ->
+               Types.Call (Raw id_i32_symbol)
+             | (None | Some _), Types.Num_type I64 ->
+               Types.Call (Raw id_i64_symbol)
+             | (None | Some _), Types.Num_type F32 ->
+               Types.Call (Raw id_f32_symbol)
+             | (None | Some _), Types.Num_type F64 ->
+               Types.Call (Raw id_f64_symbol)
+             | _ -> Fmt.failwith "TODO" )
+           (fst export_type)
       @ [ Types.Call (Raw iso_check_index) ]
     in
     let type_f = Types.Bt_raw (None, ([], [])) in
@@ -311,8 +329,7 @@ let check_iso ~unsafe export_name export_type module1 module2 =
   Logs.debug (fun m ->
     m "generated module:@\n  @[<v>%a@]" Text.pp_modul text_modul );
   let+ m, link_state =
-    Compile.Binary.until_link ~unsafe:false ~optimize:false ~name:None
-      link_state modul
+    Compile.Binary.until_link ~unsafe:false ~name:None link_state modul
   in
   let m = Symbolic.convert_module_to_run m in
 
@@ -320,9 +337,10 @@ let check_iso ~unsafe export_name export_type module1 module2 =
 
 module String_set = Set.Make (String)
 
-let cmd ~deterministic_result_order ~fail_mode ~files ~model_format
-  ~no_assert_failure_expression_printing ~no_stop_at_failure ~no_value ~solver
-  ~unsafe ~workers ~workspace ~model_out_file ~with_breadcrumbs =
+let cmd ~deterministic_result_order ~fail_mode ~exploration_strategy ~files
+  ~model_format ~no_assert_failure_expression_printing ~no_stop_at_failure
+  ~no_value ~solver ~unsafe ~workers ~workspace ~model_out_file
+  ~with_breadcrumbs =
   let* workspace =
     match workspace with
     | Some path -> Ok path
@@ -341,7 +359,7 @@ let cmd ~deterministic_result_order ~fail_mode ~files ~model_format
   Logs.info (fun m -> m "module %s is %a" module_name2 Fpath.pp file2);
 
   let compile ~unsafe file =
-    Compile.File.until_binary_validate ~unsafe ~rac:false ~srac:false file
+    Compile.File.until_validate ~unsafe ~rac:false ~srac:false file
   in
 
   Logs.info (fun m -> m "Compiling %a" Fpath.pp file1);
@@ -427,7 +445,7 @@ let cmd ~deterministic_result_order ~fail_mode ~files ~model_format
       Logs.info (fun m -> m "checking export %s" export_name);
       let* result = check_iso ~unsafe export_name export_type module1 module2 in
 
-      Cmd_sym.handle_result ~fail_mode ~workers ~solver
+      Cmd_sym.handle_result ~exploration_strategy ~fail_mode ~workers ~solver
         ~deterministic_result_order ~model_format ~no_value
         ~no_assert_failure_expression_printing ~workspace ~no_stop_at_failure
         ~model_out_file ~with_breadcrumbs result )

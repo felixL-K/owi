@@ -6,7 +6,7 @@ include Symbolic_memory_intf
 
 let page_size = Symbolic_value.const_i32 65_536l
 
-module Make (Backend : M) = struct
+module Make (Backend : M) : Symbolic_memory_intf.S = struct
   type t =
     { data : Backend.t
     ; mutable size : Symbolic_value.int32
@@ -32,33 +32,6 @@ module Make (Backend : M) = struct
   let size { size; _ } = Symbolic_value.I32.mul size page_size
 
   let size_in_pages { size; _ } = size
-
-  let fill _ = assert false
-
-  let blit _ = assert false
-
-  let blit_string m str ~src ~dst ~len =
-    (* This function is only used in memory init so everything will be concrete *)
-    let str_len = String.length str in
-    let mem_len = Int32.(to_int (i32 m.size) * to_int (i32 page_size)) in
-    let src = Int32.to_int @@ i32 src in
-    let dst = Int32.to_int @@ i32 dst in
-    let len = Int32.to_int @@ i32 len in
-    if
-      src < 0 || dst < 0 || len < 0
-      || src + len > str_len
-      || dst + len > mem_len
-    then Symbolic_value.Bool.const true
-    else begin
-      for i = 0 to len - 1 do
-        let byte = Char.code @@ String.get str (src + i) in
-        let a = Backend.address_i32 (Int32.of_int (dst + i)) in
-        Backend.storen m.data a
-          (Smtml.Expr.value (Bitv (Smtml.Bitvector.of_int8 byte)))
-          1
-      done;
-      Symbolic_value.Bool.const false
-    end
 
   let clone m = { data = Backend.clone m.data; size = m.size }
 
@@ -133,10 +106,61 @@ module Make (Backend : M) = struct
     let+ a = must_be_valid_address m.data addr 4 in
     Backend.storen m.data a v 4
 
-  let store_64 m ~addr v =
+  let store_64 m ~(addr : Smtml.Expr.t) v =
     let open Symbolic_choice_without_memory in
     let+ a = must_be_valid_address m.data addr 8 in
     Backend.storen m.data a v 8
+
+  let fill m ~(pos : Smtml.Expr.t) ~(len : Smtml.Expr.t) (c : char) =
+    let open Symbolic_choice_without_memory in
+    let* len = select_i32 len in
+    let len = Int32.to_int len in
+    let* pos = select_i32 pos in
+    let pos = Int32.to_int pos in
+    let c = Symbolic_value.const_i32 (Int32.of_int (int_of_char c)) in
+
+    let rec aux i =
+      if i = len then return ()
+      else
+        let addr = Symbolic_value.const_i32 (Int32.of_int (pos + i)) in
+        let* () = store_8 m ~addr c in
+        aux (i + 1)
+    in
+    aux 0
+
+  let blit m ~src ~dst ~len =
+    let open Symbolic_choice_without_memory in
+    let* len = select_i32 len in
+    let len = Int32.to_int len in
+    let* src = select_i32 src in
+    let src = Int32.to_int src in
+    let* dst = select_i32 dst in
+    let dst = Int32.to_int dst in
+
+    let rec aux i =
+      if i = len then return ()
+      else
+        let addr = Symbolic_value.const_i32 (Int32.of_int (src + i)) in
+        let* v = load_8_s m addr in
+        let addr = Symbolic_value.const_i32 (Int32.of_int (dst + i)) in
+        let* () = store_8 m ~addr v in
+        aux (i + 1)
+    in
+    aux 0
+
+  let blit_string m str ~src ~dst ~len =
+    (* This function is only used in memory init so everything will be concrete *)
+    (* TODO: I am not sure this is true, this should be investigated and fixed at some point *)
+    let src = Int32.to_int @@ i32 src in
+    let dst = Int32.to_int @@ i32 dst in
+    let len = Int32.to_int @@ i32 len in
+    for i = 0 to len - 1 do
+      let byte = Char.code @@ String.get str (src + i) in
+      let a = Backend.address_i32 (Int32.of_int (dst + i)) in
+      Backend.storen m.data a
+        (Smtml.Expr.value (Bitv (Smtml.Bitvector.of_int8 byte)))
+        1
+    done
 
   let get_limit_max _m = None (* TODO *)
 

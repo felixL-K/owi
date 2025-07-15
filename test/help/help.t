@@ -7,13 +7,16 @@ no subcommand should print help
          owi [COMMAND] …
   
   COMMANDS
+         analyze COMMAND …
+             Analyze a program in different possible ways
+  
          c [OPTION]… FILE…
              Compile a C file to Wasm and run the symbolic interpreter on it
   
          c++ [OPTION]… FILE…
              Compile a C++ file to Wasm and run the symbolic interpreter on it
   
-         conc [OPTION]… FILE…
+         conc [OPTION]… FILE
              Run the concolic interpreter
   
          fmt [OPTION]… FILE…
@@ -27,14 +30,11 @@ no subcommand should print help
              Check the iso-functionnality of two Wasm modules by comparing the
              output when calling their exports.
   
-         opt [OPTION]… FILE
-             Optimize a module
-  
          replay [OPTION]… FILE
              Replay a module containing symbols with concrete values in a
              replay file containing a model
   
-         run [OPTION]… FILE…
+         run [OPTION]… FILE
              Run the concrete interpreter
   
          rust [OPTION]… FILE…
@@ -43,8 +43,12 @@ no subcommand should print help
          script [OPTION]… FILE…
              Run a reference test suite script
   
-         sym [OPTION]… FILE…
+         sym [OPTION]… FILE
              Run the symbolic interpreter
+  
+         tinygo [OPTION]… FILE…
+             Compile a TinyGo file to Wasm and run the symbolic interpreter on
+             it
   
          validate [OPTION]… FILE…
              Validate a module

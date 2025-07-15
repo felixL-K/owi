@@ -6,11 +6,11 @@ NAME
        owi-conc - Run the concolic interpreter
 
 SYNOPSIS
-       owi conc [OPTION]… FILE…
+       owi conc [OPTION]… FILE
 
 ARGUMENTS
        FILE (required)
-           source files
+           source file
 
 OPTIONS
        --color=WHEN (absent=auto)
@@ -22,6 +22,9 @@ OPTIONS
 
        --entry-point=FUNCTION
            entry point of the executable
+
+       --exploration=VAL (absent=lifo)
+           exploration strategy to use ("fifo", "lifo" or "random")
 
        --fail-on-assertion-only
            ignore traps and only report assertion violations
@@ -49,9 +52,6 @@ OPTIONS
 
        --no-value
            do not display a value for each symbol
-
-       --optimize
-           optimize mode
 
        -q, --quiet
            Be quiet. Takes over -v and --verbosity.

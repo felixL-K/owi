@@ -91,6 +91,8 @@ module Data = struct
   type t = Link_env.data
 
   let value data = data.Link_env.value
+
+  let size data = String.length data.Link_env.value
 end
 
 module Elem = struct
@@ -168,7 +170,7 @@ module Module_to_run = struct
   type t =
     { id : string option
     ; env : Env.t
-    ; to_run : Types.binary Types.expr list
+    ; to_run : Types.binary Types.expr Annotated.t list
     }
 
   let env (t : t) = t.env

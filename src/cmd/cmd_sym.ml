@@ -5,26 +5,57 @@
 open Bos
 open Syntax
 module Expr = Smtml.Expr
-module Choice = Symbolic_choice_with_memory
 
 type fail_mode =
   | Trap_only
   | Assertion_only
   | Both
 
-let link_symbolic_modules link_state =
-  let func_typ = Symbolic.Extern_func.extern_type in
-  Link.extern_module' link_state ~name:"owi" ~func_typ
-    Symbolic_wasm_ffi.symbolic_extern_module
+type exploration_strategy =
+  | FIFO
+  | LIFO
+  | Random
 
-let run_file ~entry_point ~unsafe ~rac ~srac ~optimize ~invoke_with_symbols _pc
-  filename =
-  let* m = Compile.File.until_binary_validate ~unsafe ~rac ~srac filename in
+type parameters =
+  { unsafe : bool
+  ; rac : bool
+  ; srac : bool
+  ; workers : int
+  ; no_stop_at_failure : bool
+  ; no_value : bool
+  ; no_assert_failure_expression_printing : bool
+  ; deterministic_result_order : bool
+  ; fail_mode : fail_mode
+  ; exploration_strategy : exploration_strategy
+  ; workspace : Fpath.t option
+  ; solver : Smtml.Solver_type.t
+  ; model_format : Cmd_utils.model_format
+  ; entry_point : string option
+  ; invoke_with_symbols : bool
+  ; model_out_file : Fpath.t option
+  ; with_breadcrumbs : bool
+  }
+
+let run_file ~parameters ~source_file =
+  let { unsafe; rac; srac; entry_point; invoke_with_symbols; _ } = parameters in
+  let* m = Compile.File.until_validate ~unsafe ~rac ~srac source_file in
   let* m = Cmd_utils.set_entry_point entry_point invoke_with_symbols m in
-  let link_state = link_symbolic_modules Link.empty_state in
+  let link_state =
+    let func_typ = Symbolic.Extern_func.extern_type in
+    let link_state = Link.empty_state in
+    let link_state =
+      Link.extern_module' link_state ~name:"wasi_snapshot_preview1" ~func_typ
+        Symbolic_wasm_ffi.wasi_snapshot_preview1
+    in
+    let link_state =
+      Link.extern_module' link_state ~name:"owi" ~func_typ
+        Symbolic_wasm_ffi.symbolic_extern_module
+    in
+    link_state
+  in
 
   let+ m, link_state =
-    Compile.Binary.until_link ~unsafe ~optimize ~name:None link_state m
+    Compile.Binary.until_link ~unsafe ~name:None link_state m
   in
   let m = Symbolic.convert_module_to_run m in
   Interpret.Symbolic.modul ~timeout:None ~timeout_instr:None link_state.envs m
@@ -172,12 +203,12 @@ let sort_results deterministic_result_order results =
     |> List.to_seq |> Seq.map fst
   else results
 
-let handle_result ~workers ~no_stop_at_failure ~no_value
+let handle_result ~exploration_strategy ~workers ~no_stop_at_failure ~no_value
   ~no_assert_failure_expression_printing ~deterministic_result_order ~fail_mode
   ~workspace ~solver ~model_format ~model_out_file ~with_breadcrumbs
   (result : unit Symbolic.Choice.t) =
   let thread = Thread_with_memory.init () in
-  let res_queue = Wq.make () in
+  let res_stack = Ws.make () in
   let path_count = Atomic.make 0 in
   let callback v =
     let open Symbolic_choice_intf in
@@ -186,23 +217,28 @@ let handle_result ~workers ~no_stop_at_failure ~no_value
     | _, (EVal (), _) -> ()
     | ( (Both | Trap_only)
       , (ETrap (t, m, labels, breadcrumbs, symbol_scopes), thread) ) ->
-      Wq.push
+      Ws.push
         (`ETrap (t, m, labels, breadcrumbs, symbol_scopes), thread)
-        res_queue
+        Prio.default res_stack
     | ( (Both | Assertion_only)
       , (EAssert (e, m, labels, breadcrumbs, symbol_scopes), thread) ) ->
-      Wq.push
+      Ws.push
         (`EAssert (e, m, labels, breadcrumbs, symbol_scopes), thread)
-        res_queue
+        Prio.default res_stack
     | (Trap_only | Assertion_only), _ -> ()
   in
   let join_handles =
-    Symbolic_choice_with_memory.run ~workers solver result thread ~callback
-      ~callback_init:(fun () -> Wq.make_pledge res_queue)
-      ~callback_end:(fun () -> Wq.end_pledge res_queue)
+    Symbolic_choice_with_memory.run
+      ( match exploration_strategy with
+      | LIFO -> (module Wq)
+      | FIFO -> (module Ws)
+      | Random -> (module Wpq) )
+      ~workers solver result thread ~callback
+      ~callback_init:(fun () -> Ws.make_pledge res_stack)
+      ~callback_end:(fun () -> Ws.end_pledge res_stack)
   in
   let results =
-    Wq.read_as_seq res_queue ~finalizer:(fun () ->
+    Ws.read_as_seq res_stack ~finalizer:(fun () ->
       Array.iter Domain.join join_handles )
   in
   let results = sort_results deterministic_result_order results in
@@ -216,27 +252,41 @@ let handle_result ~workers ~no_stop_at_failure ~no_value
   Logs.app (fun m -> m "All OK!")
 
 (* NB: This function propagates potential errors (Result.err) occurring
-         during evaluation (OS, syntax error, etc.), except for Trap and Assert,
-         which are handled here. Most of the computations are done in the Result
-         monad, hence the let*. *)
-let cmd ~unsafe ~rac ~srac ~optimize ~workers ~no_stop_at_failure ~no_value
-  ~no_assert_failure_expression_printing ~deterministic_result_order ~fail_mode
-  ~workspace ~solver ~files ~model_format ~entry_point ~invoke_with_symbols
-  ~model_out_file ~with_breadcrumbs =
+             during evaluation (OS, syntax error, etc.), except for Trap and Assert,
+             which are handled here. Most of the computations are done in the Result
+             monad, hence the let*. *)
+let cmd ~parameters ~source_file =
+  let* result : unit Symbolic.Choice.t = run_file ~parameters ~source_file in
+
+  let { exploration_strategy
+      ; fail_mode
+      ; workers
+      ; solver
+      ; deterministic_result_order
+      ; model_format
+      ; no_value
+      ; no_assert_failure_expression_printing
+      ; workspace
+      ; model_out_file
+      ; with_breadcrumbs
+      ; _
+      } =
+    parameters
+  in
+
+  (* deterministic_result_order implies no_stop_at_failure *)
+  let no_stop_at_failure =
+    parameters.deterministic_result_order || parameters.no_stop_at_failure
+  in
+
+  (* TODO: can we handle this at the cmdliner level? *)
   let* workspace =
     match workspace with
     | Some path -> Ok path
     | None -> OS.Dir.tmp "owi_sym_%s"
   in
 
-  (* deterministic_result_order implies no_stop_at_failure *)
-  let no_stop_at_failure = deterministic_result_order || no_stop_at_failure in
-  let pc = Choice.return () in
-  let* result : unit Symbolic.Choice.t =
-    list_fold_left
-      (run_file ~entry_point ~unsafe ~rac ~srac ~optimize ~invoke_with_symbols)
-      pc files
-  in
-  handle_result ~fail_mode ~workers ~solver ~deterministic_result_order
-    ~model_format ~no_value ~no_assert_failure_expression_printing ~workspace
-    ~no_stop_at_failure ~model_out_file ~with_breadcrumbs result
+  handle_result ~exploration_strategy ~fail_mode ~workers ~solver
+    ~deterministic_result_order ~model_format ~no_value
+    ~no_assert_failure_expression_printing ~workspace ~no_stop_at_failure
+    ~model_out_file ~with_breadcrumbs result

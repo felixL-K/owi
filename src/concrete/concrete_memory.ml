@@ -38,35 +38,21 @@ let grow mem delta =
 let fill mem ~pos ~len c =
   let pos = Int32.to_int pos in
   let len = Int32.to_int len in
-  pos < 0 || len < 0
-  || pos + len > Bytes.length mem.data
-  ||
-  ( Bytes.unsafe_fill mem.data pos len c;
-    false )
+  Bytes.unsafe_fill mem.data pos len c;
+  Ok ()
 
 let blit mem ~src ~dst ~len =
   let src = Int32.to_int src in
   let dst = Int32.to_int dst in
   let len = Int32.to_int len in
-  let data_len = Bytes.length mem.data in
-  src < 0 || dst < 0 || len < 0
-  || src + len > data_len
-  || dst + len > data_len
-  ||
-  ( Bytes.unsafe_blit mem.data src mem.data dst len;
-    false )
+  Bytes.unsafe_blit mem.data src mem.data dst len;
+  Ok ()
 
 let blit_string mem str ~src ~dst ~len =
-  let str_len = String.length str in
   let src = Int32.to_int src in
   let dst = Int32.to_int dst in
   let len = Int32.to_int len in
-  src < 0 || dst < 0 || len < 0
-  || src + len > str_len
-  || dst + len > Bytes.length mem.data
-  ||
-  ( Bytes.unsafe_blit_string str src mem.data dst len;
-    false )
+  Bytes.unsafe_blit_string str src mem.data dst len
 
 let get_limit_max { limits; _ } = Option.map Int64.of_int limits.max
 
